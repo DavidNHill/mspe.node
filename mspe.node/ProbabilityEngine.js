@@ -24,6 +24,12 @@ class PeConstant {
     static power10n = [BigInt(1), BigInt(10), BigInt(100), BigInt(1000), BigInt(10000), BigInt(100000), BigInt(1000000), BigInt(10000000)];
     static power10 = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000];
 
+    // this is the largest binomial coefficient supported. Must be greater than width x height of the maximum sized board.
+    static MAX_BINOMIAL_COEFFICIENT = 50000;
+
+    // this is the binomial coefficients pre-calculated.  The array needed is "size * (size - 1) / 2".   A size of 500 supports 30x16 sized boards.
+    static BINOMIAL_CACHE_SIZE = 500;   
+
 }
 
 class PeFunction {
@@ -84,8 +90,6 @@ function calculate(message) {
         const height = message.board.height;
         const mines = message.board.mines;
 
-
- 
         console.log("Game with dimensions " + width + "x" + height + "/" + mines + " received");
 
         // we'll need how many mines left to find and how many tiles still covered
@@ -220,7 +224,7 @@ function calculate(message) {
 
             // options 
             const options = {};
-            options.verbose = true;
+            options.verbose = false;
 
             // send all this information into the probability engine
             var pe = new ProbabilityEngine(board, witnesses, witnessed, coveredCount, minesToFind, options);
@@ -478,7 +482,7 @@ class PrimeSieve {
 
 class ProbabilityEngine {
 
-    static binomial = new Binomial(50000, 500);  // pre calculate some binomial coefficients
+    static binomial = new Binomial(PeConstant.MAX_BINOMIAL_COEFFICIENT, PeConstant.BINOMIAL_CACHE_SIZE);  // pre calculate some binomial coefficients
 
 	constructor(board, allWitnesses, allWitnessed, squaresLeft, minesLeft, options) {
 
