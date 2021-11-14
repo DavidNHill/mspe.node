@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31702.278
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "mspe.node", "mspe.node\mspe.node.njsproj", "{0AFF042A-C224-40E5-B454-A80F83EB8157}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0AFF042A-C224-40E5-B454-A80F83EB8157}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0AFF042A-C224-40E5-B454-A80F83EB8157}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0AFF042A-C224-40E5-B454-A80F83EB8157}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0AFF042A-C224-40E5-B454-A80F83EB8157}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7D1A275B-C9B4-48D7-A621-D686E739C0AC}
+	EndGlobalSection
+EndGlobal

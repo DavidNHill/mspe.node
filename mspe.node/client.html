@@ -1,0 +1,24 @@
+<html>
+<body onload="load_images()" onresize="browserResized()">
+
+    <button type="button" id="switchButton" onclick="solve()">Fire request</button>
+
+    <!-- where the board goes -->
+    <div style="position: absolute; left: 40px; right: 10px; top: 40px; bottom: 20px;" ondrop="dropHandler(event)" ondragover="dragOverHandler(event)">
+        <section class="tooltip" id="canvas" style="position: absolute; left: 10px; top: 0px; bottom: 0px; right: 0px;">
+            <div id="display" style="left: 0px; right: 0px; top: 0px; bottom: 0px;">
+                <canvas class="led" id="myMinesLeft" width="96" height="40" oncontextmenu="return false"></canvas>
+            </div>
+            <div id="board" style="overflow: auto; position: relative; top:0px; left:0px;">
+                <canvas id="myCanvas" width="500" height="500" oncontextmenu="return false" style="position: absolute; top: 0px; left: 0px;"></canvas>
+                <canvas id="myHints" width="500" height="500" oncontextmenu="return false" style="position: absolute; top: 0px; left: 0px; pointer-events: none;"></canvas>
+            </div>
+        </section>
+    </div>
+
+    <script src="client/main.js" type="text/javascript"></script>
+    <script src="client/Board.js" type="text/javascript"></script>
+    <script src="client/Tile.js" type="text/javascript"></script>
+</body>
+</html>
+

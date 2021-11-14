@@ -1,0 +1,13 @@
+{
+  "name": "mspe.node",
+  "version": "0.0.0",
+  "description": "mspe.node",
+  "main": "server.js",
+  "author": {
+    "name": ""
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "path": "^0.12.7"
+  }
+}
