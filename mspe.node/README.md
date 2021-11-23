@@ -1,15 +1,24 @@
-# Minesweeper Probability Engine for Node.js
+# Minesweeper Solver for Node.js
 ## What is it?
-This is my implementation of Michael Gottlieb's superb algorithm for calculating the probability of a tile being a mine on an arbitratry minesweeper position.
+This is my minesweeper solver implemented as a Node.js server.
 
-My version uses BigInt variables (for accuracy, although it really isn't needed) and has a Binomial Coefficient cache to improved performance for very large boards.
+## What can it do?
 
-The code for the probability engine is found in ProbabilityEngine.js, everything else is node.js comms and my test harness.
+- Implementation of Michael Gottlieb's superb algorithm for calculating the probability of a tile being a mine on an arbitratry minesweeper position.
+- Detect dead tiles
+- Detect 50/50s and pseudo-50/50s
+- Use a safety and progress heuristic to pick a good guess mid game
+- Use brute force during the end game to find (one of) the best series of moves to maximise the chance of winning the game
 
-The entry point function is: calculate(message)
+Features other than the probability engine can be turned off (either globally or by message) if not required.  Refer to class 'PeConstant' at the top off 'ProbabilityEngine.js' to see the global options available.
+
+Also included is a test harness to perform bulk runs.
+
+## Input and Ouput
 
 The input is a Javascript Object (called message below) containing the following;
 ```
+  message.options
   message.board.width
                .height
                .mines
@@ -21,7 +30,7 @@ Tile description
       .y
       .value
 ```
-Only revealed tiles need to be sent.  This excludes all flagged tiles.
+Only revealed tiles need to be sent.  This excludes all flagged tiles. Tiles without a value property are ignored.
 
 The response is a Javascript Object (called response below) containing the following
 ```
@@ -35,26 +44,27 @@ Tile description
   tile.x
       .y
       .safety
+      .dead
+      .play
 ```
 
 Only covered tiles are returned.  This includes all flagged tiles.  A correctly flagged tile will have safety of 0 (zero).  
+
+If there is a 'dead' property this means that the solver has determined that the tile can only have one possible value, or be a mine.  It is never correct to guess a dead tile.
+
+If there is a 'play' property this is the tile that the solver recommends.  The play property is set by either the tiebreak logic, the 50/50 detection logic or the brute force logic.  if none of these is used then there won't be a play property assigned.
 
 A successful response will have response.valid = true and no message.  An error will have valid = false and a message.
 
 response.board is the same as message.board and can be used to pass additional information which will be bounced back.
 
-## How can I use it?
-Take the probabilityEngine.js file and drop it into your application.
+The client module 'main.js contains example code for calling the server in function 'Solve()'.
 
-You might need to remove the node.js export statement...
-```
-module.exports = {
-    calculate: function (message) {
-        return calculate(message);
-    }
-}
-```
+## Which modules contain the solver logic
 
-Build an input message (defined earlier) and call the calculate() function.
+The solver logic sits in ProbabilityEngine.js and SolverFunctions.js
 
-Process the response.  The safest tiles are first in the response.tiles array.
+## worker pool
+
+The server 'server.js' uses 'WorkerPool' npm to move the processing off the main node.js thread.  Each worker has its own copy of the solver including the Binomial Coefficient and Prime number cache.  It would be very inefficient to build these caches for each request.  Care should be taken if you move away from this model to ensure that initialiation only occurs once per worker.
+

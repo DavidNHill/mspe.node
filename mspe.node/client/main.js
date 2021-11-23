@@ -3,7 +3,7 @@
 
 console.log('At start of main.js');
 
-var TILE_SIZE = 24;
+var TILE_SIZE = 20;
 const DIGIT_HEIGHT = 38;
 const DIGIT_WIDTH = 22;
 const DIGITS = 5;
@@ -24,14 +24,24 @@ var led_images = [];
 
 var canvasLocked = false;   // we need to lock the canvas if we are auto playing to prevent multiple threads playing the same game
 
-var canvas = document.getElementById('myCanvas');
-var ctx = canvas.getContext('2d');
+const canvas = document.getElementById('myCanvas');
+const ctx = canvas.getContext('2d');
 
-var docMinesLeft = document.getElementById('myMinesLeft');
-var ctxBombsLeft = docMinesLeft.getContext('2d');
+const docMinesLeft = document.getElementById('myMinesLeft');
+const ctxBombsLeft = docMinesLeft.getContext('2d');
 
-var canvasHints = document.getElementById('myHints');
-var ctxHints = canvasHints.getContext('2d');
+const canvasHints = document.getElementById('myHints');
+const ctxHints = canvasHints.getContext('2d');
+
+const runSeed = document.getElementById('runSeed');
+const runBoard = document.getElementById('runBoard');
+const runGames = document.getElementById('runGames');
+const runOutput = document.getElementById('runOutput');
+
+const runTieBreak = document.getElementById('allowTieBreak');
+const runDeadTileAnalysis = document.getElementById('doDeadTileAnalysis');
+const run5050Check = document.getElementById('do5050Check');
+const runBFDAThreshold = document.getElementById('bfdaThreshold');
 
 var currentGameDescription;
 
@@ -62,31 +72,51 @@ async function startup() {
 
     browserResized();
 
+    runSeed.value = "12345";
+    runBoard.value = "30x16/99";
+    runGames.value = "1000";
+    runBFDAThreshold.value = "200";
+
     //renderHints([]);  // clear down hints
 
     renderTiles(board.tiles); // draw the board
 
     updateMineCount(board.bombs_left);  // reset the mine count
 
-    showMessage("Welcome to minesweeper solver dedicated to Annie");
 }
 
-async function solve() {
+async function doSolve() {
 
-    var message = {};
+    const options = {};
+    options.allowDeadTileAnalysis = runDeadTileAnalysis.checked;
+    options.allowTieBreak = runTieBreak.checked;
+    options.allow5050Check = run5050Check.checked;
+    options.bruteForceThreshold = parseInt(runBFDAThreshold.value);
+
+    solve(board, options, true);
+
+}
+
+async function solve(workBoard, options, animate) {
+
+    const message = {};
+
+    if (options != null) {
+        message.options = options;
+    }
 
     // create the board dimensions
-    var mb = {};
-    mb.width = board.width;
-    mb.height = board.height;
-    mb.mines = board.num_bombs;
+    const mb = {};
+    mb.width = workBoard.width;
+    mb.height = workBoard.height;
+    mb.mines = workBoard.num_bombs;
 
     // create the tile details for revealed tiles
-    var tiles = [];
-    for (var tile of board.tiles) {
+    const tiles = [];
+    for (const tile of workBoard.tiles) {
 
         if (!tile.isCovered()) {
-            var t = {};
+            const t = {};
             t.x = tile.x;
             t.y = tile.y;
             t.value = tile.getValue();
@@ -98,29 +128,34 @@ async function solve() {
     message.board = mb;
     message.tiles = tiles;
 
-    var outbound = JSON.stringify(message);
-    console.log("==> " + outbound);
+    const outbound = JSON.stringify(message);
+    if (animate) {
+        console.log("==> " + outbound);
+    }
 
-    var json_data = await fetch("/solve", {
+
+    const json_data = await fetch("/solve", {
         method: "POST",
         body: outbound,
         headers: new Headers({
             "Content-Type": "application/json"
         })
     });
-    var reply = await json_data.json();
+    const reply = await json_data.json();
 
-
-    console.log("<== " + JSON.stringify(reply));
-
-    if (reply.valid) {
+    if (animate) {
+        console.log("<== " + JSON.stringify(reply));
+    }
+ 
+    if (reply.valid && animate) {
         renderHints(reply.tiles);
     }
 
+    return reply;
 }
 
 // render an array of tiles to the canvas
-function renderHints(hints) {
+async function renderHints(hints) {
 
     //console.log(hints.length + " hints to render");
 
@@ -146,9 +181,28 @@ function renderHints(hints) {
     ctxHints.globalAlpha = 1;
     ctxHints.fillStyle = "black";
     for (var tile of hints) {
+
+        if (tile.dead != null) {
+            ctxHints.globalAlpha = 0.33;
+            ctxHints.fillStyle = "black";
+            ctxHints.fillRect(tile.x * TILE_SIZE, tile.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+        if (tile.safety == 1) {
+            ctxHints.globalAlpha = 0.5;
+            ctxHints.fillStyle = "green";
+            ctxHints.fillRect(tile.x * TILE_SIZE, tile.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        } else if (tile.play != null) {
+            ctxHints.globalAlpha = 0.5;
+            ctxHints.fillStyle = "orange";
+            ctxHints.fillRect(tile.x * TILE_SIZE, tile.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+
+        ctxHints.globalAlpha = 1;
+        ctxHints.fillStyle = "black";
+
         var value = (1 - tile.safety) * 100;
   
-        if (value < 10) {
+        if (value < 9.95) {
             var value1 = value.toFixed(1);
         } else {
             var value1 = value.toFixed(0);
@@ -517,7 +571,222 @@ function draw(x, y, tileType) {
 }
 
 
+async function bulkRun() {
 
+    const startTime = Date.now();
+
+    let played = 0;
+    let won = 0;
+    let noGuess = 0;
+
+    const batchSeed = runSeed.value;
+
+    const rng = JSF(batchSeed);  // create an RNG based on the seed
+    const startIndex = 0;
+
+    const size = parseInt(runGames.value)
+
+    const board1 = runBoard.value.toUpperCase().split("/");
+
+    if (board1.length != 2) {
+        console.log("Board size not interpretable expecting WidthxHeight/Mines");
+        return;
+    }
+
+    const mines = parseInt(board1[1]);
+
+    const board2 = board1[0].split("X");
+
+    if (board2.length != 2) {
+        console.log("Board size not interpretable expecting WidthxHeight/Mines");
+        return;
+    }
+
+    const width = parseInt(board2[0]);
+    const height = parseInt(board2[1]);
+
+    {
+        board = new Board(0, width, height, mines, 0, "safe");
+
+        resizeCanvas(board.width, board.height);  // resize the canvas
+
+        browserResized();  // do we need scroll bars?
+
+        renderTiles(board.tiles); // draw the board
+
+        updateMineCount(board.bombs_left);
+
+    }
+
+    const options = {};
+    options.allowDeadTileAnalysis = runDeadTileAnalysis.checked;
+    options.allowTieBreak = runTieBreak.checked;
+    options.allow5050Check = run5050Check.checked;
+    options.bruteForceThreshold = parseInt(runBFDAThreshold.value);
+    options.verbose = false;
+
+    while (played < size) {
+
+        played++;
+
+        const gameSeed = Math.floor(rng() * Number.MAX_SAFE_INTEGER);
+
+        console.log(gameSeed);
+
+        const game = new ServerGame(0, width, height, mines, startIndex, gameSeed, "safe");
+
+        const board = new Board(0, width, height, mines, gameSeed, "safe");
+
+        let tile = game.getTile(startIndex);
+
+        let revealedTiles = game.clickTile(tile);
+        applyResults(board, revealedTiles);  // this is in MinesweeperGame.js
+
+        let loopCheck = 0;
+        let guessed = false;
+        while (revealedTiles.header.status == IN_PLAY) {
+
+            loopCheck++;
+
+            if (loopCheck > 10000) {
+                break;
+            }
+
+            const reply = await solve(board, options, false);
+
+            if (!reply.valid) {
+                console.log("Reply not valid: " + reply.message);
+                return;
+            }
+
+            const actions = reply.tiles;
+
+            // build a list of actions to play
+            const toPlay = [];
+            for (const action of actions) {
+                if (action.safety == 1 || action.play != null) {   // if safe to clear  or the best guess
+                    toPlay.push(action);
+
+                    if (action.safety != 1) {  // do no more actions after a guess
+                        guessed = true;
+                        break;
+                    }
+                }
+            }
+
+            // if nothing to play make the first not dead guess
+            if (toPlay.length == 0) {
+                guessed = true;
+                for (const action of actions) {
+                    if (action.dead == null && action.safety > 0) {   // if not dead and not a mine
+                        toPlay.push(action);
+                        break;
+                    }
+                }
+            }
+
+            // if still nothing to play make the first guess
+            if (toPlay.length == 0) {
+                toPlay.push(actions[0]);
+            }
+
+            for (const action of toPlay) {
+
+                tile = game.getTile(board.xy_to_index(action.x, action.y));
+
+                revealedTiles = game.clickTile(tile);
+
+                if (revealedTiles.header.status != IN_PLAY) {  // if won or lost nothing more to do
+                    if (action.safety == 0) {
+                        console.log("clicked on a known mine!");
+                    }
+                    if (action.safety == 1 && revealedTiles.header.status == LOST) {
+                        console.log("Died with a safety of 1 !! ");
+                        console.log(action);
+                        return;
+                    }
+                    break;
+                }
+
+                applyResults(board, revealedTiles);
+
+             }
+
+        }
+
+        console.log(revealedTiles.header.status);
+
+        if (revealedTiles.header.status == WON) {
+            won++;
+            if (!guessed) {
+                noGuess++
+            }
+        }
+
+        const output = "Played " + played + " won " + won + " (" + (100 * won / played).toFixed(2) + "%) No guess " + noGuess;
+
+        runOutput.innerHTML = output;
+
+        console.log(output);
+    }
+
+    const output = "Seed " + batchSeed + " Finished ==> Played " + played + " won " + won + " (" + (100 * won / played).toFixed(2) + "%) No guess " + noGuess;
+
+    runOutput.innerHTML = output;
+
+    console.log(output);
+
+
+
+}
+
+function applyResults(board, revealedTiles) {
+
+    //console.log("Tiles to reveal " + revealedTiles.tiles.length);
+    //console.log(revealedTiles);
+
+    // apply the changes to the logical board
+    for (let i = 0; i < revealedTiles.tiles.length; i++) {
+
+        const target = revealedTiles.tiles[i];
+
+        const index = target.index;
+        const action = target.action;
+
+        const tile = board.getTile(index);
+
+        if (action == 1) {    // reveal value on tile
+            tile.setValue(target.value);
+            //console.log("Setting Tile " + target.index + " to " + target.value);
+
+        } else if (action == 2) {  // add or remove flag
+            if (target.flag != tile.isFlagged()) {
+                tile.toggleFlag();
+                if (tile.isFlagged()) {
+                    board.bombs_left--;
+                } else {
+                    board.bombs_left++;
+                }
+            }
+
+        } else if (action == 3) {  // a tile which is a mine (these get returned when the game is lost)
+            board.setGameLost();
+            tile.setBomb(true);
+
+        } else if (action == 4) {  // a tile which is a mine and is the cause of losing the game
+            board.setGameLost();
+            tile.setBombExploded();
+
+        } else if (action == 5) {  // a which is flagged but shouldn't be
+            tile.setBomb(false);
+
+        } else {
+            console.log("action " + action + " is not valid");
+        }
+
+    }
+
+}
 
 // reads a file dropped onto the top of the minesweeper board
 async function dropHandler(ev) {

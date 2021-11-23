@@ -8,32 +8,46 @@ const express = require('express');
 
 const server = express();
 server.use(express.static(path.join(__dirname, '')));
-server.use(express.json());
+server.use(express.json({ limit: '10mb' }));
+
+// pool of workers to run the transactions on
+const workerpool = require('workerpool');
+const pool = workerpool.pool(__dirname + '/ProbabilityEngine.js', { 'minWorkers': 2, 'maxWorkers': 5 });
+
+//console.log(process.memoryUsage());
 
 // creating an link to the probability engine
-const engine = require('./ProbabilityEngine');
+// const engine = require('./ProbabilityEngine');
 
 
 // used to send the actions and their consequences
 server.post('/solve', function (req, res) {
 
-	console.log('Data request received ');
-
 	const message = req.body;
 
-	//console.log("<== " + JSON.stringify(message));
+	// run the solver on a thread in the pool to make the solution more scalable
+	pool.exec('calculate', [message])
+		.then(function (result) {
+			res.writeHead(200, { 'Content-Type': 'application/json' });
+			res.write(JSON.stringify(result));
+			res.end();
 
+		})
+		.catch(function (err) {
+			console.error(err);
+		});
+
+	/*
 	const reply = engine.calculate(message);
 
 	if (reply == null) {
 		console.log("No reply returned from probability engine");
 	}
 
-	//console.log("==> " + JSON.stringify(reply));
-
 	res.writeHead(200, { 'Content-Type': 'application/json' });
 	res.write(JSON.stringify(reply));
 	res.end();
+	*/
 
 });
 
