@@ -5,20 +5,11 @@
 
 "use strict";
 
-const workerpool = require('workerpool');
-
-// create a worker and register public functions
-workerpool.worker({
-    calculate: calculate
-});
-
-/*
 module.exports = {
     calculate: function (message) {
         return calculate(message);
     }
 }
-*/
 
 const functions = require('./SolverFunctions');
 
@@ -26,7 +17,7 @@ class PeConstant {
 
     // Send activity messages to the console (should be false unless running tests)
     // Can be overridden to false by property 'message.options.verbose'
-    static VERBOSE = true;
+    static VERBOSE = false;
 
     // try to detect dead tiles during the probability engine processing and mark them
     // recommended setting is true, can be turned off by property 'message.options.allowDeadTileAnalysis'
@@ -110,10 +101,11 @@ Object.freeze(PeConstant);  // ensure they remain constants
 function calculate(message) {
 
     const reply = {};
-    const start = Date.now();
 
     // wrap everything in a try/catch so the caller doesn't have to take responsibility
     try {
+
+        const start = Date.now();
 
         // look for options passed in the message
         const globalOptions = (message.options == null) ? {} : message.options;
@@ -168,7 +160,9 @@ function calculate(message) {
             throw new Error("Property 'message.board.mines' is missing");
         }
 
-        console.log("Game with dimensions " + width + "x" + height + "/" + mines + " received");
+        if (globalOptions.verbose) {
+            console.log("Game with dimensions " + width + "x" + height + "/" + mines + " received");
+        }
 
         // we'll need how many mines left to find and how many tiles still covered
         let coveredCount = 0;      // this is the number of tiles off the edge and not trivially containing a mine.
@@ -194,8 +188,6 @@ function calculate(message) {
                 let index = tile.x + tile.y * width;
                 allTiles[index] = tile;
             }
-
-
         }
 
         // add any missing tiles
@@ -208,13 +200,13 @@ function calculate(message) {
             }
         }
 
-         // all the tiles which are still covered including mines, these are the ones we'll be returning
+        // all the tiles which are still covered including mines, these are the ones we'll be returning
         const coveredTiles = [];
 
         // place to store unsatisfied uncovered tiles - i.e. things we still need to work on
         const witnesses = [];
 
-         // identify trivially discovered mines
+        // identify trivially discovered mines
         for (let i = 0; i < allTiles.length; i++) {
 
             const tile = allTiles[i];
@@ -282,10 +274,12 @@ function calculate(message) {
 
         let pe;
         let tieBreakTiles;
-        // if there are no witnesses then the safety is "mines to find" / "covered tiles"  
+        // have we been sent a completed board  
         if (coveredCount == 0) {
 
-            console.log("The position is completed, nothing to do");
+            if (globalOptions.verbose) {
+                console.log("The position is completed, nothing to do");
+            }
 
         } else {  // use the probability engine
 
@@ -306,7 +300,7 @@ function calculate(message) {
                 } else {
                     offEdgeSafety = pe.offEdgeProbability.toFixed(6);
 
-                    // tiles without a calculated safety must be off the edge, so set to the off edge safety.  Mines were set to safety zero earlier.
+                    // tiles without a calculated safety must be off the edge, so set to the off edge safety.  Known Mines were set to safety zero earlier.
                     for (let tile of coveredTiles) {
                         if (tile.safety == null) {
                             tile.safety = offEdgeSafety;
@@ -314,7 +308,6 @@ function calculate(message) {
                         }
                     }
 
-                    // if we don't have a safe tile then look for an unavoidable 50/50
                     let foundSomething = false;
 
                     // if we have only 1 solution then we've solved the game and we can ignore any other analysis
@@ -322,12 +315,15 @@ function calculate(message) {
                         foundSomething = true;
                     }
 
+                    // if we don't have a safe tile then look for an unavoidable 50/50
                     if ((pe.bestProbability != 1 || PeConstant.ALWAYS_CHECK_FOR_5050) && globalOptions.allow5050Check && !foundSomething) {
 
                         // See if there are any unavoidable 2 tile 50/50 guesses 
                         const unavoidable5050a = pe.checkForUnavoidable5050();
                         if (unavoidable5050a != null) {
-                            console.log(functions.tileAsText(unavoidable5050a) + " is an unavoidable 50/50 guess.");
+                            if (globalOptions.verbose) {
+                                console.log(functions.tileAsText(unavoidable5050a) + " is an unavoidable 50/50 guess.");
+                            }
                             unavoidable5050a.play = true;
                             foundSomething = true;
                         }
@@ -336,7 +332,9 @@ function calculate(message) {
                         if (!foundSomething) {
                             const unavoidable5050b = checkForPseudo5050(globalOptions, board, minesToFind);
                             if (unavoidable5050b != null) {
-                                console.log(functions.tileAsText(unavoidable5050b) + " is an unavoidable 50/50 guess, or safe.");
+                                if (globalOptions.verbose) {
+                                    console.log(functions.tileAsText(unavoidable5050b) + " is an unavoidable 50/50 guess, or safe.");
+                                }
                                 unavoidable5050b.play = true;
                                 foundSomething = true;
                             }
@@ -346,12 +344,14 @@ function calculate(message) {
                     let bfdaCompleted = false;
                     let bfda;
 
-                    // if we have an isolated edge process that
+                    // if we have an isolated edge then process that
                     if ((pe.bestProbability != 1 || PeConstant.ALWAYS_DO_ISOLATED_EDGE) && pe.isolatedEdgeBruteForce != null && !foundSomething) {
 
                         const solutionCount = pe.isolatedEdgeBruteForce.crunch();
 
-                       console.log("Solutions found by brute force for isolated edge " + solutionCount);
+                        if (globalOptions.verbose) {
+                            console.log("Solutions found by brute force for isolated edge " + solutionCount);
+                        }
 
                         bfda = new BruteForceAnalysis(pe.isolatedEdgeBruteForce.allSolutions, pe.isolatedEdgeBruteForce.iterator.tiles, options.verbose);  // the tiles and the solutions need to be in sync
 
@@ -366,19 +366,59 @@ function calculate(message) {
                     }
 
 
-                    // see if we can do a Brute Force Deep Analysis
+                    // see if we can do a Brute Force Deep Analysis on the whole board
                     if (pe.bestProbability != 1 && pe.finalSolutionsCount < globalOptions.bruteForceThreshold && !foundSomething) {
 
-                        pe.generateIndependentWitnesses();
+                        //Create new PE using what we have discovered about the mines from the first - this will reduce the iterations
+                        let newMinesToFind = mines;
+                        let newCoveredTiles = [];
 
-                        const iterator = new WitnessWebIterator(pe, coveredTiles, -1);
+                        for (const tile of coveredTiles) {
+                            if (tile.safety != 0) {
+                                newCoveredTiles.push(tile);
+                            } else {
+                                tile.mine = true;
+                                newMinesToFind--;
+                            }
+                        }
+
+                        // get all the tiles adjacent to unsatisfied witnesses
+                        const work = new Set();  // use a set to deduplicate the witnessed tiles
+                        for (let tile of witnesses) {
+                            for (let adjTile of functions.adjacentIterator(width, height, allTiles, tile)) {
+                                if (adjTile.value == null && adjTile.mine == null) {   // not a mine and covered
+                                    const index = adjTile.x + adjTile.y * width;
+                                    work.add(index);
+                                }
+                            }
+                        }
+
+                        const newWitnessed = [];
+                        for (let index of work) {
+                            newWitnessed.push(allTiles[index]);
+                        }
+
+                        // options
+                        const options = {};
+                        options.verbose = globalOptions.verbose;
+                        options.deadTileAnalysis = globalOptions.allowDeadTileAnalysis;  // this will attempt to find dead tiles.  It is only correct to guess a dead tile if all the tiles are dead.
+                        options.apply = false;             // don't apply the safety values to the tiles
+
+                        // send all this information into the probability engine  - we don't intend to run it just get the independent witnessed
+                        const newPe = new ProbabilityEngine(board, witnesses, newWitnessed, newCoveredTiles.length, newMinesToFind, options);
+
+                        newPe.generateIndependentWitnesses();
+
+                        const iterator = new WitnessWebIterator(newPe, newCoveredTiles, -1);
 
                         if (iterator.cycles <= PeConstant.BRUTE_FORCE_CYCLES_THRESHOLD) {
                             const bruteForce = new Cruncher(board, iterator);
 
                             const solutionCount = bruteForce.crunch();
 
-                            console.log("Solutions found by brute force " + solutionCount + " after " + iterator.getIterations() + " cycles");
+                            if (globalOptions.verbose) {
+                                console.log("Solutions found by brute force " + solutionCount + " after " + iterator.getIterations() + " cycles");
+                            }
 
                             bfda = new BruteForceAnalysis(bruteForce.allSolutions, iterator.tiles, options.verbose);  // the tiles and the solutions need to be in sync
 
@@ -390,7 +430,9 @@ function calculate(message) {
                             }
 
                         } else {
-                            console.log("Brute Force requires too many cycles - skipping BFDA: " + iterator.cycles);
+                            if (globalOptions.verbose) {
+                                console.log("Brute Force requires too many cycles - skipping BFDA: " + iterator.cycles);
+                            }
                         }
                     }
 
@@ -400,7 +442,7 @@ function calculate(message) {
                             tile.dead = true;
                         }
 
-                        if (!bfda.allDead) {   
+                        if (!bfda.allDead) {
                             bfda.bestTile.play = true;
                         } else {
                             bfda.allTiles[0].play = true;  // if all the tiles are dead then suggest any of the tiles
@@ -426,6 +468,7 @@ function calculate(message) {
         // sort the tiles into safest first order
         coveredTiles.sort(function (a, b) { return b.safety - a.safety });
 
+        // run the tiebreak logic
         if (tieBreakTiles != null && tieBreakTiles.length != 0) {
             if (tieBreakTiles.length == 1) {  // if only 1 tile then no need to tiebeak
                 tieBreakTiles[0].tile.play = true;
@@ -436,7 +479,7 @@ function calculate(message) {
 
         // tidy up the outgoing tiles by removing unneeded properties
         for (let tile of coveredTiles) {
-            if (tile.mine) {  
+            if (tile.mine) {
                 delete tile.mine;
             }
             if (tile.offEdge) {
@@ -448,7 +491,11 @@ function calculate(message) {
         reply.valid = true;
         reply.board = message.board;
         reply.tiles = coveredTiles;
- 
+
+        if (globalOptions.verbose) {
+            console.log("Duration: " + (Date.now() - start) + " milliseconds");
+        }
+
     } catch (e) {
         console.log(e.name + ": " + e.message);
         console.log(e.stack);
@@ -459,8 +506,6 @@ function calculate(message) {
         reply.message = e.name + ": " + e.message;
         reply.tiles = [];
     }
-
-    console.log("Duration: " + (Date.now() - start) + " milliseconds");
 
     return reply;
 }
@@ -587,7 +632,9 @@ function tieBreak(globalOptions, board, pe, tieBreakTiles) {
 
     const start = Date.now();
 
-    console.log("Tiebreak using " + tieBreakTiles.length + " Tiles selected ");
+    if (globalOptions.verbose) {
+        console.log("Tiebreak using " + tieBreakTiles.length + " Tiles selected ");
+    }
 
     let best;
     for (let tile of tieBreakTiles) {
@@ -610,18 +657,20 @@ function tieBreak(globalOptions, board, pe, tieBreakTiles) {
 
     });
 
-    findAlternativeMove(tieBreakTiles);
-
-    console.log("Solver recommends " + functions.tileAsText(tieBreakTiles[0].tile));
+    // this replaces a dominated tile with the best replacement
+    findAlternativeMove(globalOptions, tieBreakTiles);
 
     tieBreakTiles[0].tile.play = true;
 
-    //console.log("Best Guess analysis took " + (Date.now() - start) + " milliseconds to complete");
+    if (globalOptions.verbose) {
+        console.log("Solver recommends " + functions.tileAsText(tieBreakTiles[0].tile));
+        console.log("Best Guess analysis took " + (Date.now() - start) + " milliseconds to complete");
+    }
 
 }
 
 // find a move which 1) is safer than the move given and 2) when move is safe ==> the alternative is safe
-function findAlternativeMove(actions) {
+function findAlternativeMove(globalOptions, actions) {
 
     const action = actions[0]  // the current best
 
@@ -633,7 +682,9 @@ function findAlternativeMove(actions) {
         if (alt.tile.safety - action.tile.safety > 0.001) {  // the alternative move is at least a bit safe than the current move
             for (let tile of action.commonClears) {  // see if the move is in the list of common safe tiles
                 if (alt.tile.x == tile.x && alt.tile.y == tile.y) {
-                    console.log("Replacing " + functions.tileAsText(action.tile) + " with " + functions.tileAsText(alt.tile) + " because it dominates");
+                    if (globalOptions.verbose) {
+                        console.log("Replacing " + functions.tileAsText(action.tile) + " with " + functions.tileAsText(alt.tile) + " because it dominates");
+                    }
 
                     // switch the alternative action with the best
                     actions[0] = alt;
@@ -813,9 +864,13 @@ function checkForPseudo5050(globalOptions, board, minesToFind) {
             delete tile2.mine;
 
             if (counter.finalSolutionsCount != 0) {
-                //console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can support 2 mines");
+                if (globalOptions.verbose) {
+                    console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can support 2 mines");
+                }
             } else {
-                //console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can not support 2 mines, we should guess here immediately");
+                if (globalOptions.verbose) {
+                    console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can not support 2 mines, we should guess here immediately");
+                }
                 return tile1;
             }
 
@@ -851,9 +906,15 @@ function checkForPseudo5050(globalOptions, board, minesToFind) {
             delete tile2.mine;
 
             if (counter.finalSolutionsCount != 0) {
-                //console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can support 2 mines");
+                if (globalOptions.verbose) {
+                    console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can support 2 mines");
+                }
+                
             } else {
-                //console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can not support 2 mines, we should guess here immediately");
+                if (globalOptions.verbose) {
+                    console.log(functions.tileAsText(tile1) + " and " + functions.tileAsText(tile2) + " can not support 2 mines, we should guess here immediately");
+                }
+         
                 return tile1;
             }
 
@@ -907,8 +968,8 @@ function checkForPseudo5050(globalOptions, board, minesToFind) {
                 if (tiles[l].dead == null) {
                     allDead = false;
                 } else {
-                    //riskyTiles++;
-                    //risky[l] = true;  // since we'll never select a dead tile, consider them risky
+                    riskyTiles++;
+                    risky[l] = true;  // since we'll never select a dead tile, consider them risky
                 }
 
                 if (tiles[l].offEdge) {
@@ -1185,7 +1246,7 @@ class Binomial {
 
         }
 
-        console.log("Binomial Coefficient generator initialised in " + (Date.now() - start) + " milliseconds");
+        //console.log("Binomial Coefficient generator initialised in " + (Date.now() - start) + " milliseconds");
     }
 
 
@@ -2102,6 +2163,7 @@ class ProbabilityEngine {
 
         const edgeTiles = new Set();
         const edgeWitnesses = new Set();
+        let extraMines = 0;  // extra mines are tiles which the probability engine has just determined are mines
 
         let everything = true;
 
@@ -2111,17 +2173,27 @@ class ProbabilityEngine {
         // load each tile on this edge into a set
         for (let i = 0; i < this.mask.length; i++) {
             if (this.mask[i]) {
+
+                const box = this.boxes[i];
+
                 if (pl.mineBoxCount[i] == 0) {
                     this.writeToConsole("Edge has safe tiles isolation check not needed");
                     return false;
                 }
 
-                 for (let j = 0; j < this.boxes[i].tiles.length; j++) {
-                    edgeTiles.add(this.boxes[i].tiles[j]);
+                // if the mine count = solutions * box size then all the tiles in the box are mines
+                if (pl.mineBoxCount[i] == pl.solutionCount * BigInt(box.tiles.length)) {
+                    extraMines = extraMines + box.tiles.length;
+                    this.writeToConsole("Box contains " + box.tiles.length + " mines");
+                    continue; // don't include the box in the isolated edge
                 }
 
-                for (let j = 0; j < this.boxes[i].boxWitnesses.length; j++) {
-                    edgeWitnesses.add(this.boxes[i].boxWitnesses[j].tile);
+                 for (let j = 0; j < box.tiles.length; j++) {
+                    edgeTiles.add(box.tiles[j]);
+                }
+
+                for (let j = 0; j < box.boxWitnesses.length; j++) {
+                    edgeWitnesses.add(box.boxWitnesses[j].tile);
                 }
 
             } else {
@@ -2164,7 +2236,7 @@ class ProbabilityEngine {
 
         const tiles = [...edgeTiles];
         const witnesses = [...edgeWitnesses];
-        const mines = this.workingProbs[0].mineCount;
+        const mines = this.workingProbs[0].mineCount - extraMines;
 
         if (mines == 0) {
             this.writeToConsole("Isolated edge has no mines, nothing to discover");
@@ -2218,7 +2290,7 @@ class ProbabilityEngine {
                 this.independentIterations = this.independentIterations * ProbabilityEngine.binomial.generate(w.minesToFind, w.tiles.length);
                 this.independentMines = this.independentMines + w.minesToFind;
                 this.independentWitnesses.push(w);
-                console.log(functions.tileAsText(w.tile) + " is an independent witness");
+                //console.log(functions.tileAsText(w.tile) + " is an independent witness");
             } else {
                 this.dependentWitnesses.push(w);
             }
@@ -2489,27 +2561,84 @@ class ProbabilityEngine {
 
     }
 
+    // we need to be able to reduce the witness down to 2 tiles needing 1 mine
+    createLink(witness) {
+
+        let minesToFind = witness.minesToFind;
+        let numberOfTiles = witness.tiles.length;
+
+        // not possible
+        if (numberOfTiles - minesToFind != 1) {
+            return null;
+        }
+
+        const link = new Link();
+
+        // remove the tiles which are definite mines
+        let count = 0;
+        for (const tile of witness.tiles) {
+            if (tile.safety != 0) {
+                if (count == 0)
+                    link.tile1 = tile;
+                 else if (count == 1) {
+                    link.tile2 = tile;
+                } else {
+                    return null;  // too many free tiles next to the witness
+                }
+                count++;
+            }
+        }
+
+        // if we have 2 tiles then we have a link
+        if (count == 2) {
+            return link;
+        } else {
+            return null;
+        }
+
+    }
+
+
     checkForUnavoidable5050() {
 
         this.writeToConsole("Looking for 2-tile (or extended) 50/50");
 
         const links = [];
 
-        for (let i = 0; i < this.prunedWitnesses.length; i++) {
+        top: for (let i = 0; i < this.prunedWitnesses.length; i++) {
             const witness = this.prunedWitnesses[i];
 
-            if (witness.minesToFind == 1 && witness.tiles.length == 2) {
+            const link = this.createLink(witness);
+
+            if (link != null) {
+
+                //this.writeToConsole("Link " + functions.tileAsText(link.tile1) + " & " + functions.tileAsText(link.tile2));
+
+                // we don't want links we've already found
+                for (const otherLink of links) {
+                    if (link.tile1.x == otherLink.tile1.x && link.tile1.y == otherLink.tile1.y && link.tile2.x == otherLink.tile2.x && link.tile2.y == otherLink.tile2.y
+                        || link.tile1.x == otherLink.tile2.x && link.tile1.y == otherLink.tile2.y && link.tile2.x == otherLink.tile1.x && link.tile2.y == otherLink.tile1.y) {
+                        //this.writeToConsole("Link " + functions.tileAsText(link.tile1) + " & " + functions.tileAsText(link.tile2) + " is a duplicate");
+                        continue top;
+                    }
+ 
+                }
 
                 // create a new link
-                const link = new Link();
-                link.tile1 = witness.tiles[0];
-                link.tile2 = witness.tiles[1];
+                //const link = new Link();
+                //link.tile1 = witness.tiles[0];
+                //link.tile2 = witness.tiles[1];
 
                 //console.log("Witness " + witness.tile.asText() + " is a possible unavoidable guess witness");
                 let unavoidable = true;
                 // if every monitoring tile also monitors all the other tiles then it can't provide any information
                 for (let j = 0; j < witness.tiles.length; j++) {
                     const tile = witness.tiles[j];
+
+                    // ignore tiles adjacent to the witness which are mines 
+                    if (tile.mine != null || tile.safety == 0) {
+                        continue;
+                    }
 
                     // get the witnesses monitoring this tile
                     for (let adjTile of functions.adjacentIterator(this.board.width, this.board.height, this.board.allTiles, tile)) {
@@ -2528,9 +2657,15 @@ class ProbabilityEngine {
                             }
                         }
 
-                        // if we are monitoring and not a mine then see if we are also monitoring all the other mines
+                        // if we are monitoring and not a mine then see if we are also monitoring all the other mines in that witness
                         if (toCheck) {
                             for (let otherTile of witness.tiles) {
+
+                                // ignore tiles which are mines
+                                if (otherTile.mine != null || otherTile.safety == 0) {
+                                    continue;
+                                }
+
                                 if (!functions.isAdjacent(adjTile, otherTile)) {
 
                                     //console.log("Tile " + adjTile.asText() + " is not monitoring all the other witnessed tiles");
@@ -2549,10 +2684,11 @@ class ProbabilityEngine {
                     }
                 }
                 if (unavoidable) {
-                    this.writeToConsole("Tile " + functions.tileAsText(witness.tile) + " is an unavoidable guess");
-                    return witness.tiles[0];
+                    this.writeToConsole("Tile " + functions.tileAsText(link.tile1) + " is an unavoidable guess");
+                    return link.tile1;
                 }
 
+                this.writeToConsole("Link " + functions.tileAsText(link.tile1) + " " + link.closed1 + " & " + functions.tileAsText(link.tile2) + " " + link.closed2 + " accepted");
                 links.push(link);
             }
         }
@@ -3057,7 +3193,7 @@ class Cruncher {
 
         this.duration = Date.now() - start;
 
-        console.log(this.iterator.iterationsDone + " cycles took " + this.duration + " milliseconds");
+        //console.log(this.iterator.iterationsDone + " cycles took " + this.duration + " milliseconds");
 
         return candidates;
 
@@ -3233,6 +3369,10 @@ class WitnessWebIterator {
             || indMines > this.probabilityEngine.minesLeft) {
             this.done = true;
             this.top = 0;
+            console.log("Mines left " + this.probabilityEngine.minesLeft);
+            console.log("Independent Mines " + indMines);
+            console.log("Tiles left " + this.probabilityEngine.tilesLeft);
+            console.log("Independent tiles " + indSquares);
             console.log("Nothing to do in this iterator");
             return;
         }
@@ -3258,7 +3398,9 @@ class WitnessWebIterator {
             }
         }
 
-        console.log("Iterations needed " + this.cycles);
+        if (pe.options.verbose) {
+            console.log("Iterations needed " + this.cycles);
+        }
 
         Object.seal(this);  // prevent new values being created
     }

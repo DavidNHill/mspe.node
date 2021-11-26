@@ -12,7 +12,7 @@ server.use(express.json({ limit: '10mb' }));
 
 // pool of workers to run the transactions on
 const workerpool = require('workerpool');
-const pool = workerpool.pool(__dirname + '/ProbabilityEngine.js', { 'minWorkers': 2, 'maxWorkers': 5 });
+const pool = workerpool.pool(__dirname + '/WorkerWrapper.js', { 'minWorkers': 2, 'maxWorkers': 5 });
 
 //console.log(process.memoryUsage());
 

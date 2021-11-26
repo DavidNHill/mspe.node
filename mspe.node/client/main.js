@@ -42,6 +42,7 @@ const runTieBreak = document.getElementById('allowTieBreak');
 const runDeadTileAnalysis = document.getElementById('doDeadTileAnalysis');
 const run5050Check = document.getElementById('do5050Check');
 const runBFDAThreshold = document.getElementById('bfdaThreshold');
+const runAnimate = document.getElementById('animate');
 
 var currentGameDescription;
 
@@ -147,7 +148,7 @@ async function solve(workBoard, options, animate) {
         console.log("<== " + JSON.stringify(reply));
     }
  
-    if (reply.valid && animate) {
+    if (reply.valid && runAnimate.checked) {
         renderHints(reply.tiles);
     }
 
@@ -652,7 +653,7 @@ async function bulkRun() {
                 break;
             }
 
-            const reply = await solve(board, options, false);
+            const reply = await solve(board, options, true);
 
             if (!reply.valid) {
                 console.log("Reply not valid: " + reply.message);
@@ -699,6 +700,8 @@ async function bulkRun() {
                 if (revealedTiles.header.status != IN_PLAY) {  // if won or lost nothing more to do
                     if (action.safety == 0) {
                         console.log("clicked on a known mine!");
+                        console.log(action);
+                        return;
                     }
                     if (action.safety == 1 && revealedTiles.header.status == LOST) {
                         console.log("Died with a safety of 1 !! ");
