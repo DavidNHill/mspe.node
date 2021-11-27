@@ -3572,7 +3572,7 @@ class BruteForceAnalysis {
 
     process() {
 
-        const start = performance.now();
+        const start = Date.now();
 
         this.writeToConsole("----- Brute Force Deep Analysis starting ----");
         this.writeToConsole(this.allSolutions.size() + " solutions in BruteForceAnalysis");
@@ -3636,7 +3636,7 @@ class BruteForceAnalysis {
             }
         }
 
-        const end = performance.now();;
+        const end = Date.now();;
         this.writeToConsole("Total nodes in cache = " + this.cacheHelper.cache.size + ", total cache hits = " + this.cacheHelper.cacheHit + ", total winning lines saved = " + this.cacheHelper.cacheWinningLines);
         this.writeToConsole("process took " + (end - start) + " milliseconds and explored " + this.cacheHelper.processCount + " nodes");
         this.writeToConsole("----- Brute Force Deep Analysis finished ----");
